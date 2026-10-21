@@ -1,0 +1,8 @@
+# Cordis composition patch for the custom-background bundle.
+#
+# The bundle is inserted as one entry of the desktop profile. `id` and `name`
+# must both equal the package name: the shell's boot audit refuses to start when
+# an inserted entry cannot be resolved, and a mismatch is the classic cause.
+- insert:
+    - id: dsh-custom-background
+      name: 'dsh-custom-background'

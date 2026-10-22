@@ -1,15 +1,32 @@
 {
-  "name": "dsh-custom-background",
-  "version": "1.0.0",
+  "name": "dsh-custom-wallpaper",
+  "version": "1.0.1",
   "type": "module",
   "description": "Import your own picture as the DSH window background, with an adjustable scrim that keeps every panel and label readable.",
   "license": "MIT",
+  "author": "识浅",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "background",
+    "wallpaper",
+    "theme"
+  ],
+  "homepage": "https://github.com/sqyr7/dsh-custom-background#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sqyr7/dsh-custom-background.git"
+  },
   "main": "index.js",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./icon.svg",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
   },
   "files": [
     "index.js",
@@ -17,7 +34,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
@@ -27,5 +45,8 @@
       "platform": "web",
       "immediately": true
     }
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
   }
 }

@@ -23,12 +23,12 @@
  * The host half of this bundle is empty on purpose; all state is renderer-side.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-custom-background',
+  id: 'dsh-custom-wallpaper',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
 
-    const PLUGIN_ID = 'dsh-custom-background';
+    const PLUGIN_ID = 'dsh-custom-wallpaper';
     const UI_STYLE_ID = PLUGIN_ID + '-ui-style';
     const BG_STYLE_ID = PLUGIN_ID + '-bg-style';
     const ROOT_CLASS = 'dcb-background-on';
@@ -501,6 +501,13 @@ ${selectorList(CLEARED_SELECTORS)} {
 
 html.${ROOT_CLASS} ._editor_61ozo_1 {
   background-color: ${tint(editor)} !important;
+}
+
+/* While a conversation is active the shell docks the composer behind an opaque
+   sticky fade. Repaint that band with the panel tint so the picture reaches the
+   bottom edge instead of ending in a solid stripe behind the input box. */
+html.${ROOT_CLASS} .Dc7zOa_composerSeat {
+  background: linear-gradient(180deg, transparent 0px, ${tint(panel)} 36px) !important;
 }
 
 /* The sidebar list fades into the sidebar colour at its foot; match the

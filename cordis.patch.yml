@@ -4,5 +4,5 @@
 # must both equal the package name: the shell's boot audit refuses to start when
 # an inserted entry cannot be resolved, and a mismatch is the classic cause.
 - insert:
-    - id: dsh-custom-background
-      name: 'dsh-custom-background'
+    - id: dsh-custom-wallpaper
+      name: 'dsh-custom-wallpaper'

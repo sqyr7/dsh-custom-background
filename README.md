@@ -1,4 +1,4 @@
-# 自定义背景（dsh-custom-background）
+# 自定义背景（dsh-custom-wallpaper）
 
 给 DeepSeek Harness 的窗口换一张**你自己的图片**当背景，同时保证面板、侧栏、输入框和文字依然清晰可读。
 
@@ -20,23 +20,41 @@
 
 ## 安装
 
-> 本仓库是一个**未安装**的插件源码目录，需要你自己在 DSH 里添加。
+### 方式一：从 npm 安装（推荐）
 
 1. 打开 DSH，点左下角**账号头像 → 设置**。
 2. 左侧选 **插件**（插件管理页），点 **添加插件**。
-3. 在"包名或地址"里填这个目录的**绝对路径**（把 `<插件目录>` 换成你实际放它的位置）：
+3. 在"包名或地址"里填：
 
    ```
-   <插件目录>\dsh-custom-background
+   dsh-custom-wallpaper
    ```
 
 4. 点安装，然后**重启 DSH**（关闭窗口再打开）。
 5. 重新打开 **设置**，左侧列表里就会出现 **背景** 这一项。
 
+### 方式二：从本地目录安装（自己改代码时用）
+
+把 `<插件目录>` 换成你实际放它的位置，其余步骤同方式一：
+
+```
+<插件目录>\dsh-custom-wallpaper
+```
+
+### 方式三：从 GitHub 安装
+
+在"包名或地址"里填仓库地址：
+
+```
+https://github.com/sqyr7/dsh-custom-background
+```
+
+> 这种方式要求本机已安装 git，并且能访问 GitHub；连不上会在安装前检查阶段就报错。
+
 ### 卸载
 
 1. **设置 → 背景 → 移除背景**（清掉已存的图片）。
-2. **设置 → 插件**，找到 `dsh-custom-background`，移除插件。
+2. **设置 → 插件**，找到 `dsh-custom-wallpaper`，移除插件。
 3. 重启 DSH。
 
 ---
@@ -60,8 +78,8 @@
 
 ## 数据存在哪
 
-- **图片**：浏览器 IndexedDB，库名 `dsh-custom-background`，表 `assets`，键 `background`。
-- **参数**：浏览器 localStorage，键 `dsh-custom-background:prefs`。
+- **图片**：浏览器 IndexedDB，库名 `dsh-custom-wallpaper`，表 `assets`，键 `background`。
+- **参数**：浏览器 localStorage，键 `dsh-custom-wallpaper:prefs`。
 - 两者都只在本机、只在这个 DSH 窗口的浏览器存储里；换机器或清了浏览器数据就没了，需要重新选图。
 - 插件本身**没有任何网络请求**，不会把图片发到任何地方。
 
@@ -70,7 +88,7 @@
 ## 文件结构
 
 ```
-dsh-custom-background/
+dsh-custom-wallpaper/
 ├─ package.json          # 插件清单（dsh.bundle / dsh.client）
 ├─ cordis.patch.yml      # 挂载声明
 ├─ index.js              # Host 半边（空实现，渲染全在 client）
@@ -87,7 +105,7 @@ dsh-custom-background/
 ## 工作原理（给想改的人）
 
 1. `client.js` 通过 `window.__ModuleLoader__.load({ id, factory })` 注册，导出 `{ inject: ['slots'], apply(ctx) }`。
-2. `apply()` 里 `ctx.slots.inject('settings.section', ...)` 把设置面板注册进 DSH 的设置页（id `dsh-custom-background`，order 45，标题"背景"）。
+2. `apply()` 里 `ctx.slots.inject('settings.section', ...)` 把设置面板注册进 DSH 的设置页（id `dsh-custom-wallpaper`，order 45，标题"背景"）。
 3. 选图后用 `createImageBitmap` + 64×64 canvas 算图片的平均亮度和 75 分位亮度，得到 `tone`。
 4. `requiredScrim()` 用二分法求"满足 4.5:1 对比度所需的最小遮罩"，与用户设置取较大值（受"自动"开关控制）。
 5. 真正的背景画在 `html.dcb-background-on body::before` 上：`position:fixed; inset:0; z-index:-1`，背景是 `linear-gradient(遮罩色, 遮罩色), url(blob:...)`，`cover` 居中。

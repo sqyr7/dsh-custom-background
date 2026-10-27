@@ -409,40 +409,223 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Shell surfaces that carry an opaque base fill. Each one gets exactly one
-     * translucent tint. Only the outermost element of each nested stack is
-     * listed here — tinting both a parent and its child would double the veil
-     * and swallow the picture.
+     * On Windows the native caption (minimise / maximise / close) is painted by
+     * DWM from a solid colour the desktop shell hands to `setTitleBarOverlay`,
+     * never from the document. The shell derives that colour from a hidden
+     * probe span the desktop preload appends to `<body>`:
+     *
+     *   position:fixed;visibility:hidden;pointer-events:none;
+     *   background-color:var(--dsw-specific-sidebar-fill);
+     *   color:var(--dsw-alias-label-primary)
+     *
+     * It reads the probe's *computed* background, so tinting the visible panels
+     * does not reach it — the caption keeps the opaque sidebar token and shows
+     * up as a solid block that the picture cannot shine through. Matching the
+     * probe by its inline style and clearing its fill makes the shell report a
+     * transparent caption instead, so DWM draws the buttons straight over the
+     * title-bar band the wallpaper already shows through. Only the fill is
+     * touched; the probe's `color` still supplies the symbol colour.
      */
-    const TINTED_SELECTORS = [
+    const CAPTION_PROBE_SELECTOR =
+      'body > span[style*="--dsw-specific-sidebar-fill"]';
+
+    /**
+     * Every DSH rebuild re-hashes the CSS-module class names the shell is made
+     * of (`mP3x-q_frame` today, `BynINW_frame` yesterday). Pinning those hashes
+     * is exactly why 1.0.1 painted nothing once the host moved to rc.3: the
+     * picture layer was still fine, but every opaque shell panel stayed opaque
+     * and covered it.
+     *
+     * The surfaces are therefore resolved in two layers:
+     *
+     *  - discovery (preferred): a few semantic suffixes are unique across the
+     *    whole class namespace (`_centerCol`, `_sidebarCol`, `_bottomRow`,
+     *    `_rightbarCol`, `_composerSeat`, `_panelBody`, `_fade`), so the live DOM
+     *    can name the real classes without knowing today's hash. The frame is
+     *    not discoverable that way — `_frame` is shared by a dozen unrelated
+     *    modules — but it is the parent of the centre column, so it is found
+     *    structurally.
+     *  - static table (fallback): explicit names for everything else, listing
+     *    both the rc.3 names and the pre-rc.3 ones. Selectors that match nothing
+     *    are inert, so one table keeps the plugin working across host versions.
+     */
+
+    /** Outer panels: one veil of the theme's base fill. */
+    const STATIC_TINTED = [
+      // The window frame paints the sidebar fill on Windows (the title-bar band
+      // is cut out of it), so it is tinted rather than cleared — that keeps the
+      // title bar the same weight as the panels under it.
+      '.mP3x-q_frame',
       '.BynINW_frame',
+      '.mP3x-q_centerCol',
+      '.mP3x-q_bottomRow',
+      '.mP3x-q_rightbarCol',
       '.BynINW_centerCol',
-      '.BynINW_sidebarCol',
       '.BynINW_bottomRow',
       '.BynINW_rightbarCol',
+      // Content chrome that carries a base fill of its own: the picture viewer
+      // frame, markdown images and the code-block banner.
       '._frame_1hfzl_1',
       '._image_1ypvv_287',
       '._bannerWrap_7gxqk_24',
     ];
 
+    /** The sidebar column carries the sidebar's own fill, not the base one. */
+    const STATIC_TINTED_SIDEBAR = ['.mP3x-q_sidebarCol', '.BynINW_sidebarCol'];
+
     /**
-     * Inner surfaces that would otherwise paint their own opaque base fill on
-     * top of the tinted parent. They are cleared so the parent's tint (and thus
-     * the picture) shows through.
+     * Inner surfaces that paint their own opaque fill on top of the tinted
+     * parent; they are cleared so the parent's veil (and the picture) shows
+     * through. Dialogs, menus, cards, input pills, code bodies and the terminal
+     * are deliberately absent — they must stay opaque to stay readable.
      */
-    const CLEARED_SELECTORS = [
+    const STATIC_CLEARED = [
+      // The window frame's title-bar band. The frame element itself is tinted
+      // (STATIC_TINTED) so the band and the panels share one weight.
+      '.mP3x-q_frame::before',
+      '.BynINW_frame::before',
+      // Conversation and sidebar roots.
+      '.an3WzG_root',
+      '.wtg9ga_root',
       '._2H3hWW_root',
       '.Dc7zOa_root',
-      '._surface_6nhg2_125',
-      '._tabLayout_6nhg2_134',
+      // Dock tab hosts.
       '._tabHost_6nhg2_162',
       '._emptyTabHost_6nhg2_143',
+      '._surface_6nhg2_125',
+      '._tabLayout_6nhg2_134',
+      // Side panels.
+      '.acoR2W_panelBody',
+      '.bZwPEG_root',
+      '.bZwPEG_frame',
+      '.CsSxCG_frame',
       '.OUqwTW_panel',
       '._panelBody_6nhg2_318',
       '.qWvkEq_root',
       '.qWvkEq_frame',
-      '._backing_ri079_2',
     ];
+
+    /** Text-entry surfaces keep a readable floor of the panel tint. */
+    const EDITOR_SELECTORS = ['._editor_61ozo_1'];
+
+    /** The docked composer sits on an opaque sticky gradient band. */
+    const COMPOSER_SEAT_SELECTORS = ['.an3WzG_composerSeat', '.Dc7zOa_composerSeat'];
+
+    /** The session list fades into the sidebar fill at its foot. */
+    const SIDEBAR_FADE_SELECTORS = ['.GAkraW_fade', '._9lTDKa_fade'];
+
+    /** Semantic suffixes that are unique across the whole class namespace. */
+    const DISCOVERABLE = [
+      'centerCol',
+      'sidebarCol',
+      'bottomRow',
+      'rightbarCol',
+      'composerSeat',
+      'panelBody',
+      'fade',
+    ];
+
+    function classTokensOf(el) {
+      if (!el || !el.classList) return [];
+      return Array.from(el.classList);
+    }
+
+    /**
+     * The one class token in the live DOM that ends in `_<suffix>`, or null when
+     * the suffix is absent or shared by more than one token — guessing there
+     * would paint the wrong element.
+     */
+    function uniqueSuffixClass(suffix) {
+      let found = null;
+      let nodes;
+      try {
+        nodes = document.querySelectorAll(`[class*="_${suffix}"]`);
+      } catch {
+        return null;
+      }
+      for (const node of nodes) {
+        for (const token of classTokensOf(node)) {
+          if (!token.endsWith(`_${suffix}`)) continue;
+          if (found === null) found = token;
+          else if (found !== token) return null;
+        }
+      }
+      return found;
+    }
+
+    /**
+     * Reads the live shell and returns the selectors that exist right now. Any
+     * failure just yields fewer selectors; the static table still applies.
+     */
+    function discoverSurfaces() {
+      const out = {
+        tinted: [],
+        tintedSidebar: [],
+        cleared: [],
+        composerSeat: [],
+        fade: [],
+      };
+      const found = {};
+      DISCOVERABLE.forEach((suffix) => {
+        const token = uniqueSuffixClass(suffix);
+        if (token) found[suffix] = token;
+      });
+
+      ['centerCol', 'bottomRow', 'rightbarCol'].forEach((key) => {
+        if (found[key]) out.tinted.push(`.${CSS.escape(found[key])}`);
+      });
+      if (found.sidebarCol) out.tintedSidebar.push(`.${CSS.escape(found.sidebarCol)}`);
+      if (found.panelBody) out.cleared.push(`.${CSS.escape(found.panelBody)}`);
+      if (found.composerSeat) out.composerSeat.push(`.${CSS.escape(found.composerSeat)}`);
+      if (found.fade) out.fade.push(`.${CSS.escape(found.fade)}`);
+
+      // The frame is the grid item that holds the centre column. Its class
+      // tokens are taken from the live element rather than from a table, but
+      // only the ones that are hashed module names carried by exactly one node —
+      // a shared utility class would otherwise be cleared app-wide.
+      //
+      // Only the frame's `::before` is cleared: that pseudo-element is the
+      // window's title-bar drag band, which the host paints with the sidebar
+      // fill. The frame element itself stays tinted (see STATIC_TINTED) so the
+      // title bar keeps the same weight as the panels below it.
+      if (found.centerCol) {
+        let centre = null;
+        try {
+          centre = document.querySelector(`.${CSS.escape(found.centerCol)}`);
+        } catch {
+          centre = null;
+        }
+        const frame = centre && centre.parentElement;
+        if (frame && frame !== document.body && frame !== document.documentElement) {
+          classTokensOf(frame).forEach((token) => {
+            if (token.indexOf('_') < 0) return;
+            let nodes = null;
+            try {
+              nodes = document.querySelectorAll(`.${CSS.escape(token)}`);
+            } catch {
+              nodes = null;
+            }
+            if (!nodes || nodes.length !== 1) return;
+            const sel = `.${CSS.escape(token)}`;
+            out.cleared.push(`${sel}::before`);
+          });
+        }
+      }
+      return out;
+    }
+
+    function mergeSelectors(...lists) {
+      const seen = new Set();
+      const out = [];
+      lists.forEach((list) => {
+        (list || []).forEach((sel) => {
+          if (!sel || seen.has(sel)) return;
+          seen.add(sel);
+          out.push(sel);
+        });
+      });
+      return out;
+    }
 
     function selectorList(list) {
       return list.map((sel) => `html.${ROOT_CLASS} ${sel}`).join(',\n');
@@ -465,8 +648,18 @@ window.__ModuleLoader__.load({
       // Surfaces the user types into or reads code from keep a floor.
       const editor = Math.max(panel, 68);
 
+      const live = discoverSurfaces();
+
+      const tinted = mergeSelectors(live.tinted, STATIC_TINTED);
+      const tintedSidebar = mergeSelectors(live.tintedSidebar, STATIC_TINTED_SIDEBAR);
+      const cleared = mergeSelectors(live.cleared, STATIC_CLEARED);
+      const composerSeat = mergeSelectors(live.composerSeat, COMPOSER_SEAT_SELECTORS);
+      const fade = mergeSelectors(live.fade, SIDEBAR_FADE_SELECTORS);
+
       const tint = (pct) =>
         `color-mix(in srgb, var(--dsw-alias-bg-base, #ffffff) ${pct}%, transparent)`;
+      const tintSidebar = (pct) =>
+        `color-mix(in srgb, var(--dsw-specific-sidebar-fill, var(--dsw-alias-bg-base, #ffffff)) ${pct}%, transparent)`;
 
       const css = `
 html.${ROOT_CLASS} body {
@@ -489,31 +682,47 @@ html.${ROOT_CLASS} body::before {
   background-repeat: no-repeat, no-repeat;
 }
 
-${selectorList(TINTED_SELECTORS)} {
-  background-color: ${tint(panel)} !important;
-  background-image: none !important;
+/* Windows paints the native caption from a solid colour the shell measures off
+   a hidden probe span; leave it alone and the buttons sit on an opaque slab the
+   picture cannot reach. Clearing only the probe's fill makes the shell report a
+   transparent caption, so DWM draws the buttons straight over the title-bar
+   band. Its inline \`color\` is untouched, so the symbol colour still works. */
+html.${ROOT_CLASS} ${CAPTION_PROBE_SELECTOR} {
+  background-color: transparent !important;
 }
 
-${selectorList(CLEARED_SELECTORS)} {
+${selectorList(cleared)} {
   background-color: transparent !important;
   background-image: none !important;
 }
 
-html.${ROOT_CLASS} ._editor_61ozo_1 {
+${selectorList(tinted)} {
+  background-color: ${tint(panel)} !important;
+  background-image: none !important;
+}
+
+/* The sidebar is filled from the sidebar token, not the base one; tinting it
+   with the base colour would turn it into a differently-shaded slab. */
+${selectorList(tintedSidebar)} {
+  background-color: ${tintSidebar(panel)} !important;
+  background-image: none !important;
+}
+
+${selectorList(EDITOR_SELECTORS)} {
   background-color: ${tint(editor)} !important;
 }
 
 /* While a conversation is active the shell docks the composer behind an opaque
    sticky fade. Repaint that band with the panel tint so the picture reaches the
    bottom edge instead of ending in a solid stripe behind the input box. */
-html.${ROOT_CLASS} .Dc7zOa_composerSeat {
+${selectorList(composerSeat)} {
   background: linear-gradient(180deg, transparent 0px, ${tint(panel)} 36px) !important;
 }
 
 /* The sidebar list fades into the sidebar colour at its foot; match the
    translucent panel so no solid stripe appears. */
-html.${ROOT_CLASS} ._9lTDKa_fade {
-  background: linear-gradient(to bottom, transparent, ${tint(panel)}) !important;
+${selectorList(fade)} {
+  background: linear-gradient(to bottom, transparent, ${tintSidebar(panel)}) !important;
 }
 `;
 
@@ -523,6 +732,13 @@ html.${ROOT_CLASS} ._9lTDKa_fade {
         requested: requested,
         raised: effective > requested,
         panel: panel,
+        discovered: {
+          tinted: live.tinted,
+          tintedSidebar: live.tintedSidebar,
+          cleared: live.cleared,
+          composerSeat: live.composerSeat,
+          fade: live.fade,
+        },
       };
     }
 
@@ -743,15 +959,57 @@ html.${ROOT_CLASS} ._9lTDKa_fade {
           return;
         }
         const built = buildBackgroundCss(prefs, image.url, image.tone);
+        // Mark the root before touching the sheet: the desktop preload re-reads
+        // its caption probe whenever <head> mutates, and the probe rule only
+        // applies under this class. Adding it first means the very first send
+        // already sees the cleared fill instead of the opaque token.
+        if (root) root.classList.add(ROOT_CLASS);
         const el = ensureStyleElement(BG_STYLE_ID);
         if (el.textContent !== built.css) el.textContent = built.css;
-        if (root) root.classList.add(ROOT_CLASS);
         applied = {
           scrim: built.scrim,
           requested: built.requested,
           raised: built.raised,
           panel: built.panel,
         };
+        watchShell();
+      }
+
+      /**
+       * The shell mounts lazily and swaps whole panels in and out as the user
+       * navigates, so the surfaces discovered at first paint are not the final
+       * set. Re-derive the sheet shortly after the shell's class names change.
+       *
+       * The observer is deliberately lazy: it never resets a pending run, so a
+       * chat that streams new nodes for minutes still repaints on a steady
+       * cadence instead of being starved by a debounce that keeps restarting.
+       * Repainting is cheap — discovery is a handful of attribute-substring
+       * lookups, and the stylesheet text is only replaced when it differs.
+       */
+      let observer = null;
+      let settleTimer = 0;
+
+      function scheduleSettle() {
+        if (disposed || settleTimer) return;
+        settleTimer = setTimeout(() => {
+          settleTimer = 0;
+          if (!disposed) repaint();
+        }, 400);
+      }
+
+      function watchShell() {
+        if (observer || disposed) return;
+        try {
+          observer = new MutationObserver(scheduleSettle);
+          observer.observe(document.body, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ['class'],
+          });
+        } catch {
+          observer = null;
+        }
       }
 
       function releaseUrl() {
@@ -900,6 +1158,15 @@ html.${ROOT_CLASS} ._9lTDKa_fade {
       function dispose() {
         disposed = true;
         listeners.clear();
+        if (observer) {
+          try {
+            observer.disconnect();
+          } catch {
+            /* ignore */
+          }
+          observer = null;
+        }
+        clearTimeout(settleTimer);
         releaseUrl();
         removeStyleElement(BG_STYLE_ID);
         removeStyleElement(UI_STYLE_ID);

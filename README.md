@@ -14,6 +14,7 @@
 - **自动保证文字清晰度**：读取图片亮度，按 WCAG 4.5:1 对比度要求自动把遮罩抬到需要的浓度（最多 92%），避免亮图把字压掉。
 - **一键开关**：关掉后立刻恢复原生纯色界面，图片和参数都保留。
 - **跟随主题**：深色/浅色主题都用当前主题的背景色做遮罩，不会出现突兀的白块。
+- **Windows 标题栏也透图**：右上角最小化/最大化/关闭那一块不再是一块死色，图片一直铺到窗口顶边。
 - **自动保存**：所有参数即时保存，下次打开 DSH 自动恢复。
 
 ---
@@ -109,12 +110,19 @@ dsh-custom-wallpaper/
 3. 选图后用 `createImageBitmap` + 64×64 canvas 算图片的平均亮度和 75 分位亮度，得到 `tone`。
 4. `requiredScrim()` 用二分法求"满足 4.5:1 对比度所需的最小遮罩"，与用户设置取较大值（受"自动"开关控制）。
 5. 真正的背景画在 `html.dcb-background-on body::before` 上：`position:fixed; inset:0; z-index:-1`，背景是 `linear-gradient(遮罩色, 遮罩色), url(blob:...)`，`cover` 居中。
-6. 为了让图能透出来，把外层大面（`.BynINW_frame` 等）设成 `color-mix(...)` 半透明，并把内层几个实心面板（`.Dc7zOa_root` 等）设成 `background-color: transparent`——这两组类名在 `TINTED_SELECTORS` / `CLEARED_SELECTORS` 里。
-7. 关掉开关时移除 `<style>` 和 `html` 上的类名，界面立刻回到原生样子。
+6. 为了让图能透出来，把外层大面（layout 的 `centerCol` / `sidebarCol` / `bottomRow` / `rightbarCol`）设成 `color-mix(...)` 半透明，并把内层几个实心面板（窗口 frame、会话根、侧栏根、dock 标签页等）设成 `background-color: transparent`。
+7. 类名怎么找：DSH 每次构建都会重算 CSS Module 的哈希前缀（今天是 `mP3x-q_centerCol`，昨天是 `BynINW_centerCol`），写死哈希就是 1.0.1 在 rc.3 上失效的原因。所以：
+   - **运行时发现**（首选）：`centerCol` / `sidebarCol` / `bottomRow` / `rightbarCol` / `composerSeat` / `panelBody` / `fade` 这几个语义后缀在整个类名空间里唯一，直接在 DOM 里按 `[class*="_后缀"]` 找出来，唯一才用，撞名就放弃；窗口 frame 找不到后缀，就按"中心列的父元素"结构定位。
+   - **静态表**（兜底）：其余写不出唯一后缀的（`frame` 有十几个同后缀类名、`root`/`panel` 更多）用显式列表，同时列 rc.3 名和旧名——匹配不到的规则不生效，所以一张表能跨宿主版本。
+   - 外壳是懒挂载的，面板还会随导航替换，所以 `MutationObserver` 在类名变化后重算一次样式（样式文本没变就不重写）。
+8. 关掉开关时移除 `<style>` 和 `html` 上的类名，界面立刻回到原生样子。
+9. **Windows 标题栏**：原生最小化/最大化/关闭由 DWM 绘制，颜色来自桌面端 preload 往 `<body>` 里塞的一个隐藏 span 的计算背景色（`background-color:var(--dsw-specific-sidebar-fill)`），再通过 IPC 交给 `setTitleBarOverlay()`。那个 span 是独立元素，给面板上色影响不到它，所以按钮区永远是一块不透明死色。插件只把**这个 span 的填充**清成透明（`html.dcb-background-on body > span[style*="--dsw-specific-sidebar-fill"]`），宿主随即上报 `rgba(0,0,0,0)`，DWM 就把按钮直接画在已经透出图片的标题栏带上；span 的 `color` 不动，图标颜色照旧。只影响 Windows，其他平台宿主不会创建这个 span，规则匹配不到就不生效。
 
 ### 已知限制
 
-- 半透明化依赖 DSH 当前的 CSS 类名（`.BynINW_*`、`.Dc7zOa_*`、`._*_6nhg2_*` 等）。**DSH 大版本升级后类名若变化，需要更新 `TINTED_SELECTORS` / `CLEARED_SELECTORS`**，否则表现为"图不显示"或"某个区域仍是实心"。
+- 半透明化依赖 DSH 的类名结构。语义后缀（`_centerCol` 等）跟着组件语义走、不随构建变，正常情况下跨版本可用；但如果 DSH 改了组件结构或语义名，仍需要更新 `STATIC_*` 表和 `DISCOVERABLE` 后缀列表。表现是"图不显示"或"某块区域仍是实心"。
+- Windows 标题栏透图依赖桌面端 preload 的探针 span 仍然带 `--dsw-specific-sidebar-fill` 内联样式。如果将来宿主换了取色方式（比如改用 `--dsw-alias-bg-base` 或换成真正的原生取色 API），这条规则会匹配不到、按钮区退回纯色——不会更糟，也不会影响其他功能。
+- 标题栏透图后，三个按钮的图标颜色仍由主题的 `--dsw-alias-label-primary` 决定（深色主题下是浅色图标）。如果壁纸在顶部特别亮、且面板不透明度调得很低，图标对比度会下降；此时把"面板不透明度"调高一点即可。
 - 设置弹窗本身是独立的模态层，保持不透明，所以壁纸在弹窗周围透出、弹窗内文字始终清楚。
 
 ---
